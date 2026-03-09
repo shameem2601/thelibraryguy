@@ -134,7 +134,7 @@ function App() {
     try {
       const prompt = `Write a concise, engaging summary (about 3-4 sentences maximum) for a book titled "${contextBook.title}" by "${contextBook.author}". This is for a college library catalog system. Do not include spoilers. Make it sound professional and inviting to students.`;
       
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiApiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${aiApiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
