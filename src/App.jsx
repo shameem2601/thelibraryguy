@@ -132,13 +132,29 @@ function App() {
 
     setIsGenerating(true);
     try {
-      const activeGenAI = new GoogleGenerativeAI(aiApiKey);
-      const model = activeGenAI.getGenerativeModel({ model: "gemini-pro" });
       const prompt = `Write a concise, engaging summary (about 3-4 sentences maximum) for a book titled "${contextBook.title}" by "${contextBook.author}". This is for a college library catalog system. Do not include spoilers. Make it sound professional and inviting to students.`;
       
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiApiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.error) {
+         throw new Error(data.error.message);
+      }
+
+      const text = data.candidates[0].content.parts[0].text;
       
       if (isEditMode) {
         setSelectedBook({...selectedBook, description: text.trim()});
