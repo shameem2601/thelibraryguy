@@ -1,5 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 import './App.css'
+
+// IMPORTANT: In a real production app, never expose your API key in the frontend. 
+// For this demontration, the user will need to provide their own key or a backend should handle this.
+const genAI = new GoogleGenerativeAI("YOUR_API_KEY_HERE");
 
 const initialMockBooks = [
   { id: 1, title: 'Introduction to Algorithms', author: 'Thomas H. Cormen', isbn: '9780262033848', status: 'Available', category: 'Computer Science', cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?q=80&w=200&auto=format&fit=crop', description: 'Some books are rigorously mathematical; others are mostly informal. This book combines rigor and comprehensiveness. It covers a broad range of algorithms in depth, yet makes their design and analysis accessible to all levels of readers.' },
@@ -38,8 +43,19 @@ function App() {
   // Book Details Modal State
   const [selectedBook, setSelectedBook] = useState(null);
 
+  // AI Generation State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [showApiKeyPrompt, setShowApiKeyPrompt] = useState(false);
+
   useEffect(() => {
     document.title = "theBookGuy | College Library System";
+    
+    // Check if key exists in local storage
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) {
+      setAiApiKey(savedKey);
+    }
   }, []);
 
   const searchResults = useMemo(() => {
@@ -90,10 +106,95 @@ function App() {
     }
   };
 
+  const saveApiKey = (e) => {
+    e.preventDefault();
+    localStorage.setItem('gemini_api_key', aiApiKey);
+    alert('API Key saved securely in your local browser storage.');
+    setShowApiKeyPrompt(false);
+  };
+
+  const clearApiKey = () => {
+    localStorage.removeItem('gemini_api_key');
+    setAiApiKey('');
+    alert('API Key cleared.');
+  }
+
+  const generateDescription = async (contextBook, isEditMode = false) => {
+    if (!contextBook.title || !contextBook.author) {
+      alert("Please provide at least a Title and Author before generating a description.");
+      return;
+    }
+
+    if (!aiApiKey) {
+      setShowApiKeyPrompt(true);
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const activeGenAI = new GoogleGenerativeAI(aiApiKey);
+      const model = activeGenAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const prompt = `Write a concise, engaging summary (about 3-4 sentences maximum) for a book titled "${contextBook.title}" by "${contextBook.author}". This is for a college library catalog system. Do not include spoilers. Make it sound professional and inviting to students.`;
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      if (isEditMode) {
+        setSelectedBook({...selectedBook, description: text.trim()});
+      } else {
+        setNewBook({...newBook, description: text.trim()});
+      }
+    } catch (error) {
+      console.error("Error generating description:", error);
+      alert("Failed to generate description. Please check if your API key is valid: " + error.message);
+      if (error.message.includes("API key")) {
+        setShowApiKeyPrompt(true);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const AiButton = ({ onClick, isGenerating, style }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={isGenerating}
+      title="Auto-generate description with Gemini AI"
+      style={{
+        background: 'linear-gradient(45deg, #10b981, #3b82f6)',
+        border: 'none',
+        borderRadius: '6px',
+        padding: '4px 8px',
+        color: 'white',
+        fontSize: '0.8rem',
+        fontWeight: 'bold',
+        cursor: isGenerating ? 'not-allowed' : 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        transition: 'all 0.3s ease',
+        boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)',
+        opacity: isGenerating ? 0.7 : 1,
+        ...style
+      }}
+      onMouseOver={(e) => { if(!isGenerating) { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.6)'; } }}
+      onMouseOut={(e) => { if(!isGenerating) { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(16, 185, 129, 0.4)'; } }}
+    >
+      {isGenerating ? 'Generating...' : (
+        <>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+          </svg>
+          Gemini AI
+        </>
+      )}
+    </button>
+  );
+
   const handleAddBookSubmit = (e) => {
     e.preventDefault();
-    
-    // Add simple fallback cover if none provided
     const bookToAdd = {
       ...newBook,
       id: Date.now(),
@@ -103,7 +204,6 @@ function App() {
     setBooks([...books, bookToAdd]);
     setShowAddBook(false);
     
-    // Reset form
     setNewBook({
       title: '', author: '', isbn: '', status: 'Available', category: '', description: '', cover: ''
     });
@@ -135,14 +235,12 @@ function App() {
   const cancelEditing = () => {
     setIsEditing(false);
     setEditingBookId(null);
-    // Reset selected book to initial state
     const originalBook = books.find(b => b.id === selectedBook.id);
     setSelectedBook(originalBook);
   };
 
   const renderAdminLoginModal = () => {
     if (!showAdminLogin) return null;
-    
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.3s ease' }}>
         <div className="glass-panel" style={{ padding: '40px', width: '100%', maxWidth: '400px', position: 'relative' }}>
@@ -160,13 +258,11 @@ function App() {
               <label style={{ fontWeight: 500, color: 'var(--text-main)', fontSize: '0.95rem', marginLeft: '4px' }}>Password</label>
               <input type="password" className="input-glass" required value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} style={{ width: '100%' }} placeholder="••••••••" />
             </div>
-            
             {adminLoginError && (
               <p style={{ color: '#ef4444', fontSize: '0.9rem', textAlign: 'center', margin: '0', background: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '8px' }}>
                 {adminLoginError}
               </p>
             )}
-            
             <button type="submit" className="btn-primary" style={{ marginTop: '16px', width: '100%', padding: '14px' }}>Login to Dashboard</button>
           </form>
         </div>
@@ -230,8 +326,11 @@ function App() {
                     <input type="url" className="input-glass" value={selectedBook.cover || ''} onChange={(e) => setSelectedBook({...selectedBook, cover: e.target.value})} style={{ width: '100%' }} />
                   </div>
                   
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', gridColumn: '1 / -1' }}>
-                    <label style={{ fontWeight: 500, color: 'var(--text-main)', fontSize: '0.95rem', marginLeft: '4px' }}>About the Book (Description)</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', gridColumn: '1 / -1', position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                      <label style={{ fontWeight: 500, color: 'var(--text-main)', fontSize: '0.95rem', marginLeft: '4px' }}>About the Book (Description)</label>
+                      <AiButton onClick={() => generateDescription(selectedBook, true)} isGenerating={isGenerating} />
+                    </div>
                     <textarea className="input-glass" rows="6" value={selectedBook.description || ''} onChange={(e) => setSelectedBook({...selectedBook, description: e.target.value})} style={{ width: '100%', resize: 'vertical' }}></textarea>
                   </div>
                 </div>
@@ -246,7 +345,6 @@ function App() {
       );
     }
 
-    // Default Book Details View
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.3s ease', padding: '20px' }} onClick={(e) => { if (e.target === e.currentTarget) setSelectedBook(null) }}>
         <div className="glass-panel" style={{ padding: '0', width: '100%', maxWidth: '800px', position: 'relative', display: 'flex', flexDirection: window.innerWidth < 600 ? 'column' : 'row', overflow: 'hidden' }}>
@@ -360,8 +458,11 @@ function App() {
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '4px' }}>* If left blank, a beautiful placeholder will be generated.</span>
               </div>
               
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', gridColumn: '1 / -1' }}>
-                <label style={{ fontWeight: 500, color: 'var(--text-main)', fontSize: '0.95rem', marginLeft: '4px' }}>About the Book (Description)</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', gridColumn: '1 / -1', position: 'relative' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '8px' }}>
+                  <label style={{ fontWeight: 500, color: 'var(--text-main)', fontSize: '0.95rem', marginLeft: '4px' }}>About the Book (Description)</label>
+                  <AiButton onClick={() => generateDescription(newBook, false)} isGenerating={isGenerating} />
+                </div>
                 <textarea className="input-glass" rows="5" value={newBook.description} onChange={(e) => setNewBook({...newBook, description: e.target.value})} placeholder="A comprehensive guide to..." style={{ width: '100%', resize: 'vertical' }}></textarea>
               </div>
             </div>
@@ -375,6 +476,40 @@ function App() {
 
   return (
     <div className="app-container">
+      {showApiKeyPrompt && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 3000, display: 'flex', justifyContent: 'center', alignItems: 'center', animation: 'fadeIn 0.3s ease', padding: '20px' }}>
+          <div className="glass-panel" style={{ padding: '40px', maxWidth: '500px', width: '100%' }}>
+            <h2 style={{ marginBottom: '16px', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              Gemini API Setup
+            </h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '24px', lineHeight: '1.6' }}>
+              To use AI auto-generation, you need a free Google Gemini API key. We store this securely in your browser's local storage—it is never sent to our servers.
+            </p>
+            <form onSubmit={saveApiKey}>
+               <input 
+                  type="password" 
+                  className="input-glass" 
+                  placeholder="Paste your Gemini API Key here" 
+                  style={{ width: '100%', marginBottom: '24px', borderColor: '#10b981' }} 
+                  value={aiApiKey}
+                  onChange={e => setAiApiKey(e.target.value)}
+                  required
+                />
+               <div style={{ display: 'flex', gap: '12px' }}>
+                 <button type="button" className="btn-filter" style={{ flex: 1 }} onClick={() => setShowApiKeyPrompt(false)}>Cancel</button>
+                 <button type="submit" className="btn-primary" style={{ flex: 1, background: 'linear-gradient(45deg, #10b981, #3b82f6)' }}>Save Key</button>
+               </div>
+            </form>
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ display: 'block', textAlign: 'center', marginTop: '24px', color: '#3b82f6', textDecoration: 'none', fontSize: '0.9rem' }}>
+              Get a free API key here →
+            </a>
+          </div>
+        </div>
+      )}
+
       <nav className="navbar glass-panel" style={{ borderRadius: '0 0 24px 24px', borderTop: 'none' }}>
         <a href="#" className="logo" onClick={(e) => { e.preventDefault(); setActiveTab('home'); setSearchQuery(''); }}>
           <span style={{ color: 'var(--primary)', textShadow: '0 0 20px rgba(79, 70, 229, 0.5)' }}>the</span>BookGuy
@@ -519,7 +654,17 @@ function App() {
                   <h2 style={{ margin: 0, fontSize: '1.8rem' }}>Admin Dashboard</h2>
                   <p style={{ color: 'var(--text-muted)', marginTop: '4px' }}>Manage library resources and requests</p>
                 </div>
-                <button className="btn-filter" onClick={() => { setIsAdminLoggedIn(false); setActiveTab('home'); setShowAddBook(false); }}>Log Out</button>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                    {aiApiKey ? (
+                         <button className="btn-filter" style={{ fontSize: '0.8rem', borderColor: '#10b981', color: '#10b981' }} onClick={clearApiKey}>Clear AI Key</button>
+                    ) : (
+                         <button className="btn-filter" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setShowApiKeyPrompt(true)}>
+                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                             Set AI Key
+                         </button>
+                    )}
+                  <button className="btn-filter" onClick={() => { setIsAdminLoggedIn(false); setActiveTab('home'); setShowAddBook(false); }}>Log Out</button>
+                </div>
               </div>
               
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
