@@ -133,7 +133,7 @@ function App() {
     setIsGenerating(true);
     try {
       const activeGenAI = new GoogleGenerativeAI(aiApiKey);
-      const model = activeGenAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = activeGenAI.getGenerativeModel({ model: "gemini-pro" });
       const prompt = `Write a concise, engaging summary (about 3-4 sentences maximum) for a book titled "${contextBook.title}" by "${contextBook.author}". This is for a college library catalog system. Do not include spoilers. Make it sound professional and inviting to students.`;
       
       const result = await model.generateContent(prompt);
